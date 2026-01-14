@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Roguelike 地牢探索</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="weapon_fusion_config.js"></script>
+</head>
+
+<body>
+  <div class="game-container">
+    <main class="game-main">
+      <section class="game-left">
+        <div class="map-container">
+          <canvas id="game-canvas" width="600" height="600"></canvas>
+          <!-- 技能点指示器 -->
+          <div id="skill-point-ui" class="skill-point-ui" style="display: none;">
+            <div class="key-e-icon">E</div>
+            <div class="skill-text">升级</div>
+            <div class="skill-count" id="skill-count-ui">(0)</div>
+          </div>
+        </div>
+        <div class="controls">
+          <div class="control-hint desktop-only">使用 WASD 或方向键移动</div>
+          <div class="control-hint desktop-only">自动射击敌人，躲避攻击！</div>
+        </div>
+
+        <!-- 移动端虚拟方向键 -->
+        <div class="mobile-controls" id="mobile-controls">
+          <div class="dpad-container">
+            <button class="dpad-btn" id="btn-up" aria-label="向上">↑</button>
+            <div class="dpad-row">
+              <button class="dpad-btn" id="btn-left" aria-label="向左">←</button>
+              <button class="dpad-btn" id="btn-right" aria-label="向右">→</button>
+            </div>
+            <button class="dpad-btn" id="btn-down" aria-label="向下">↓</button>
+          </div>
+          <div class="mobile-hint">滑动屏幕或点击方向键移动</div>
+        </div>
+      </section>
+
+      <section class="game-right">
+        <div class="panel player-panel">
+          <h2>角色状态</h2>
+          <div class="stat-row">
+            <span>生命值：</span>
+            <div class="health-bar">
+              <div class="health-fill" id="health-fill"></div>
+            </div>
+            <span id="health-text">100/100</span>
+          </div>
+          <div class="stat-row">
+            <span>等级：</span>
+            <span id="level">1</span>
+          </div>
+          <div class="stat-row">
+            <span>经验：</span>
+            <div class="exp-bar">
+              <div class="exp-fill" id="exp-fill"></div>
+            </div>
+            <span id="exp">0/10</span>
+          </div>
+          <div class="stat-row">
+            <span>技能点：</span>
+            <span id="skill-points">0</span>
+          </div>
+          <div class="stat-row">
+            <span>攻击力：</span>
+            <span id="attack">5</span>
+          </div>
+          <div class="stat-row">
+            <span>防御力：</span>
+            <span id="defense">2</span>
+          </div>
+          <div class="stat-row">
+            <span>金币：</span>
+            <span id="gold">0</span>
+          </div>
+          <div class="stat-row">
+            <span>距离：</span>
+            <span id="floor">0</span>
+          </div>
+        </div>
+
+        <div class="panel weapon-panel">
+          <h2>角色武器</h2>
+          <div class="weapon-grid" id="weapon-grid">
+            <!-- 由 JS 动态填充 -->
+          </div>
+        </div>
+
+        <div class="panel inventory-panel">
+          <h2>背包</h2>
+          <div class="inventory-grid" id="inventory">
+            <!-- 由 JS 动态填充 -->
+          </div>
+        </div>
+
+        <div class="panel log-panel">
+          <h2>日志</h2>
+          <div class="log-content" id="log-content">
+            <!-- 由 JS 动态填充 -->
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <div class="overlay" id="overlay" style="display:none;">
+      <div class="dialog" id="dialog">
+        <h2 id="dialog-title">事件</h2>
+        <p id="dialog-text"></p>
+        <div id="dialog-choices"></div>
+        <button id="dialog-close" class="btn">继续</button>
+      </div>
+    </div>
+
+    <!-- 升级选择弹窗 -->
+    <div class="overlay" id="upgrade-overlay" style="display:none;">
+      <div class="dialog upgrade-dialog">
+        <h2 id="upgrade-title">选择一项升级 (0点可用)</h2>
+        <div class="upgrade-options" id="upgrade-options">
+          <!-- 由 JS 动态填充 -->
+        </div>
+      </div>
+    </div>
+
+    <!-- 宝箱奖励弹窗 -->
+    <div class="overlay" id="chest-overlay" style="display:none;">
+      <div class="dialog chest-dialog">
+        <h2 id="chest-title">发现宝箱！</h2>
+        <div class="reward-options" id="reward-options">
+          <div class="reward-card" onclick="selectChestReward('gold')">
+            <div class="reward-icon">💰</div>
+            <div class="reward-name">1000 金币</div>
+            <div class="reward-desc">立即获得大量金币</div>
+          </div>
+          <div class="reward-card" onclick="selectChestReward('fusion')">
+            <div class="reward-icon">✨</div>
+            <div class="reward-name">进化武器</div>
+            <div class="reward-desc">将武器进化为更强形态</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 武器进化弹窗 -->
+    <div class="overlay" id="fusion-overlay" style="display:none;">
+      <div class="dialog fusion-dialog">
+        <h2 id="fusion-title">选择进化配方</h2>
+        <div class="fusion-options" id="fusion-options">
+          <!-- 由 JS 动态填充 -->
+        </div>
+        <button id="fusion-close" class="btn fusion-close-btn">返回</button>
+      </div>
+    </div>
+
+    <div class="overlay" id="death-overlay" style="display:none;">
+      <div class="dialog death-dialog">
+        <h2>你已死亡</h2>
+        <p id="death-text"></p>
+        <button id="restart-btn" class="btn">重新开始</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="game.js"></script>
+</body>
+
+</html>
