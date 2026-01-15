@@ -74,6 +74,36 @@ const WEAPON_FUSION_TABLE = [
         description: '冰霜与火焰的矛盾融合为燃霜',
         tier: 1,
         icon: '💠'
+    },
+
+    {
+        id: 'fusion_bomb',
+        name: '炸弹进化',
+        materials: ['steel', 'fire'],       // 钢铁 + 火焰
+        result: 'bomb',                     // → 炸弹
+        description: '钢铁的威力与火焰的爆炸融合为炸弹',
+        tier: 1,
+        icon: '💣'
+    },
+
+    {
+        id: 'fusion_storm',
+        name: '风暴进化',
+        materials: ['swift', 'lightning'],  // 疾风 + 闪电
+        result: 'storm',                    // → 风暴
+        description: '疾风的穿透与闪电的连锁融合为风暴',
+        tier: 1,
+        icon: '⛈️'
+    },
+
+    {
+        id: 'fusion_poison_mist',
+        name: '毒雾进化',
+        materials: ['swift', 'poison'],     // 疾风 + 剧毒
+        result: 'poison_mist',              // → 毒雾
+        description: '疾风的穿透与剧毒的毒素融合为毒雾',
+        tier: 1,
+        icon: '☁️'
     }
 ];
 

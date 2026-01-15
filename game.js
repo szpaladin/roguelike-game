@@ -50,20 +50,20 @@
       weapons: [
         {
           def: {
-            id: 'light',
-            name: '光芒',
-            damage: 1.0,
+            id: 'poison_mist',
+            name: '毒雾',
+            damage: 0.75,
             interval: 30,
-            speed: 8,
-            radius: 4,
-            color: '#ffffaa',
+            speed: 10,
+            radius: 12,
+            color: '#00ff00',
             lifetime: 120,
-            piercing: false,
-            blindChance: 0.5,
-            blindDuration: 180
+            piercing: true,
+            poisonDuration: 900,
+            poisonDamagePerStack: 3 / 60
           },
-          name: '光芒',
-          color: '#ffffaa',
+          name: '毒雾',
+          color: '#00ff00',
           cooldown: 0
         }
       ],  // 武器数组
@@ -74,6 +74,7 @@
     bullets: [],  // 子弹数组
     lifeStealParticles: [],  // 吸血粒子数组
     lightningEffects: [],  // 闪电特效数组
+    explosionEffects: [],  // 爆炸特效数组
     scrollY: 0,  // 滚动位置（像素，向下为正）
     autoScrollSpeed: 0.8,  // 自动滚动速度（像素/帧）
     running: true,
@@ -229,6 +230,46 @@
       piercing: false,
       blindChance: 0.5,
       blindDuration: 180
+    },
+    BOMB: {
+      id: 'bomb',
+      name: '炸弹',
+      damage: 3.0,
+      interval: 90,
+      speed: 8,
+      radius: 6,
+      color: '#ff4500',
+      lifetime: 120,
+      piercing: false,
+      explosionRadius: 100,
+      explosionDamage: 3.0
+    },
+    STORM: {
+      id: 'storm',
+      name: '风暴',
+      damage: 1.0,
+      interval: 30,
+      speed: 10,
+      radius: 12,
+      color: '#4169e1',
+      lifetime: 120,
+      piercing: true,
+      chainCount: 3,
+      chainRange: 150,
+      chainCooldown: 6
+    },
+    POISON_MIST: {
+      id: 'poison_mist',
+      name: '毒雾',
+      damage: 0.75,
+      interval: 30,
+      speed: 10,
+      radius: 12,
+      color: '#00ff00',
+      lifetime: 120,
+      piercing: true,
+      poisonDuration: 900,
+      poisonDamagePerStack: 3 / 60
     },
     BLIZZARD: {
       id: 'blizzard',
@@ -524,8 +565,12 @@
             poisonDamagePerStack: w.def.poisonDamagePerStack || 0,
             chainCount: w.def.chainCount || 0,
             chainRange: w.def.chainRange || 0,
+            chainCooldown: w.def.chainCooldown || 0,
+            lastChainTime: 0,
             blindChance: w.def.blindChance || 0,
             blindDuration: w.def.blindDuration || 0,
+            explosionRadius: w.def.explosionRadius || 0,
+            explosionDamage: w.def.explosionDamage || 0,
             freezeChance: w.def.freezeChance || 0,
             freezeDuration: w.def.freezeDuration || 0,
             burnDuration: w.def.burnDuration || 0,
@@ -645,6 +690,38 @@
                 });
               }
             }
+            // 爆炸AOE效果
+            if (b.explosionRadius > 0) {
+              // 生成爆炸特效
+              state.explosionEffects.push({
+                x: e.x,
+                y: e.y,
+                radius: 0,
+                maxRadius: b.explosionRadius,
+                life: 20
+              });
+
+              // 对范围内所有敌人造成伤害
+              for (const target of state.entities) {
+                if (target.type === ENTITY.ENEMY && target.hp > 0) {
+                  const dx = target.x - e.x;
+                  const dy = target.y - e.y;
+                  const dist = Math.sqrt(dx * dx + dy * dy);
+
+                  if (dist < b.explosionRadius) {
+                    let dmg = Math.max(1, state.player.attack * b.explosionDamage - target.defense);
+                    let vuln = (target.vulnerable ? target.vulnerableAmount : 0) + (target.frozen ? 0.1 : 0);
+                    target.hp -= dmg * (1 + vuln);
+
+                    if (target.hp <= 0) {
+                      log(`${target.name} 被炸死了！获得 ${target.exp} 经验，${target.gold} 金币。`, 'important');
+                      state.player.exp += target.exp; state.player.gold += target.gold;
+                      checkLevelUp(); updateUI();
+                    }
+                  }
+                }
+              }
+            }
             if (e.hp <= 0) {
               log(`击败了 ${e.name}！获得 ${e.exp} 经验，${e.gold} 金币。`, 'important');
               state.player.exp += e.exp; state.player.gold += e.gold;
@@ -655,6 +732,19 @@
         }
       }
       if (hit) state.bullets.splice(i, 1);
+    }
+  }
+
+  // 更新爆炸特效
+  function updateExplosionEffects() {
+    for (let i = state.explosionEffects.length - 1; i >= 0; i--) {
+      const effect = state.explosionEffects[i];
+      effect.life--;
+      effect.radius = effect.maxRadius * (1 - effect.life / 20);
+
+      if (effect.life <= 0) {
+        state.explosionEffects.splice(i, 1);
+      }
     }
   }
 
@@ -865,6 +955,9 @@
       case 'dark': return '🌑';
       case 'lightning': return '⚡';
       case 'light': return '✨';
+      case 'bomb': return '💣';
+      case 'storm': return '⛈️';
+      case 'poison_mist': return '☁️';
       case 'blizzard': return '🌨️';
       case 'inferno': return '🔴';
       case 'frostfire': return '💠';
@@ -1019,10 +1112,10 @@
     state.player = {
       x: 0, y: 0, radius: 12, speed: 3, hp: 100, maxHp: 100, level: 1, exp: 0, expToNext: 10,
       attack: 5, defense: 2, skillPoints: 0, gold: 0, lastChestDistance: 0, nextChestDistance: 10 + Math.random() * 40,
-      weapons: [{ def: WEAPONS.LIGHT, name: WEAPONS.LIGHT.name, color: WEAPONS.LIGHT.color, cooldown: 0 }],
+      weapons: [{ def: WEAPONS.POISON_MIST, name: WEAPONS.POISON_MIST.name, color: WEAPONS.POISON_MIST.color, cooldown: 0 }],
       lastDamageTime: 0, invulnerableTime: 60
     };
-    state.bullets = []; state.entities = []; state.lifeStealParticles = []; state.lightningEffects = []; state.scrollY = 0; state.lastSpawnY = 0; state.lastChunkY = -CHUNK_SIZE;
+    state.bullets = []; state.entities = []; state.lifeStealParticles = []; state.lightningEffects = []; state.explosionEffects = []; state.scrollY = 0; state.lastSpawnY = 0; state.lastChunkY = -CHUNK_SIZE;
     state.running = true; document.getElementById('death-overlay').style.display = 'none';
     document.getElementById('log-content').innerHTML = ''; initMap(); updateUI();
   }
@@ -1046,6 +1139,29 @@
           }
         }
       }
+    });
+
+    // 绘制爆炸特效
+    state.explosionEffects.forEach(effect => {
+      const screenY = effect.y - state.scrollY;
+
+      // 绘制爆炸波
+      const alpha = effect.life / 20;
+      const gradient = ctx.createRadialGradient(effect.x, screenY, 0, effect.x, screenY, effect.radius);
+      gradient.addColorStop(0, `rgba(255, 150, 0, ${alpha * 0.8})`);
+      gradient.addColorStop(0.5, `rgba(255, 69, 0, ${alpha * 0.5})`);
+      gradient.addColorStop(1, `rgba(255, 0, 0, 0)`);
+      ctx.fillStyle = gradient;
+      ctx.beginPath();
+      ctx.arc(effect.x, screenY, effect.radius, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 绘制爆炸外环
+      ctx.strokeStyle = `rgba(255, 100, 0, ${alpha})`;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(effect.x, screenY, effect.radius, 0, Math.PI * 2);
+      ctx.stroke();
     });
 
     // 绘制闪电特效
@@ -1120,6 +1236,9 @@
         const isInferno = bullet.color === '#cc0000';
         const isFrostfire = bullet.color === '#00ccff';
         const isLight = bullet.color === '#ffffaa';
+        const isBomb = bullet.color === '#ff4500';
+        const isStorm = bullet.color === '#4169e1';
+        const isPoisonMist = bullet.color === '#00ff00' && bullet.piercing;
         const radius = bullet.radius || 4;
         const time = state.gameTime;
 
@@ -1189,6 +1308,91 @@
             ctx.fillStyle = 'rgba(255, 255, 200, 0.8)';
             ctx.beginPath(); ctx.arc(px, py, 2, 0, Math.PI * 2); ctx.fill();
           }
+        } else if (isBomb) {
+          // 炸弹武器：圆形炸弹+引线
+          // 绘制炸弹本体
+          ctx.fillStyle = '#ff4500';
+          ctx.beginPath();
+          ctx.arc(screenX, screenY, radius, 0, Math.PI * 2);
+          ctx.fill();
+          // 绘制高光
+          ctx.fillStyle = '#ff6347';
+          ctx.beginPath();
+          ctx.arc(screenX - 2, screenY - 2, radius * 0.4, 0, Math.PI * 2);
+          ctx.fill();
+          // 绘制引线
+          ctx.strokeStyle = '#8b4513';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(screenX, screenY - radius);
+          ctx.lineTo(screenX, screenY - radius - 5);
+          ctx.stroke();
+          // 引线火花
+          if (Math.random() > 0.5) {
+            ctx.fillStyle = '#ffff00';
+            ctx.beginPath();
+            ctx.arc(screenX, screenY - radius - 5, 1.5, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        } else if (isStorm) {
+          // 风暴武器：乌云+闪电效果
+          const sTime = time * 0.08;
+          // 乌云效果
+          ctx.fillStyle = 'rgba(65, 105, 225, 0.6)';
+          ctx.beginPath(); ctx.arc(screenX, screenY, radius, 0, Math.PI * 2); ctx.fill();
+          // 闪电粒子
+          for (let i = 0; i < 8; i++) {
+            const angle = (Math.PI * 2 / 8) * i + sTime;
+            const dist = radius * (0.7 + Math.sin(sTime + i) * 0.3);
+            ctx.fillStyle = i % 2 === 0 ? '#ffff00' : '#fff';
+            ctx.fillRect(screenX + Math.cos(angle) * dist - 1.5, screenY + Math.sin(angle) * dist - 1.5, 3, 3);
+          }
+          // 外发光
+          const gradient = ctx.createRadialGradient(screenX, screenY, 0, screenX, screenY, radius * 1.8);
+          gradient.addColorStop(0, 'rgba(100, 149, 237, 0.4)');
+          gradient.addColorStop(1, 'rgba(65, 105, 225, 0)');
+          ctx.fillStyle = gradient; ctx.beginPath(); ctx.arc(screenX, screenY, radius * 1.8, 0, Math.PI * 2); ctx.fill();
+        } else if (isPoisonMist) {
+          // 毒雾武器：绿色云雾+骷髅标识
+          const pTime = time * 0.1;
+
+          // 底部浓密绿色云雾效果
+          for (let i = 0; i < 16; i++) {
+            const angle = (Math.PI * 2 / 16) * i + pTime;
+            const dist = radius * (0.6 + Math.sin(pTime * 2 + i) * 0.3);
+            const px = screenX + Math.cos(angle) * dist;
+            const py = screenY + Math.sin(angle) * dist;
+            const cloudSize = radius * (0.25 + Math.random() * 0.15);
+            ctx.fillStyle = `rgba(0, 255, 0, ${0.4 + Math.random() * 0.3})`;
+            ctx.beginPath();
+            ctx.arc(px, py, cloudSize, 0, Math.PI * 2);
+            ctx.fill();
+          }
+
+          // 中心绿色云团
+          const cloudGradient = ctx.createRadialGradient(screenX, screenY, 0, screenX, screenY, radius * 0.8);
+          cloudGradient.addColorStop(0, 'rgba(0, 255, 0, 0.7)');
+          cloudGradient.addColorStop(0.6, 'rgba(0, 200, 0, 0.5)');
+          cloudGradient.addColorStop(1, 'rgba(0, 150, 0, 0.2)');
+          ctx.fillStyle = cloudGradient;
+          ctx.beginPath(); ctx.arc(screenX, screenY, radius * 0.8, 0, Math.PI * 2); ctx.fill();
+
+          // 上方骷髅标识
+          ctx.fillStyle = '#00ff00';
+          ctx.font = `${radius * 1.5}px Arial`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.shadowColor = '#00ff00';
+          ctx.shadowBlur = 5;
+          ctx.fillText('☠', screenX, screenY - radius * 0.3);
+          ctx.shadowBlur = 0;
+
+          // 外层绿色发光
+          const outerGradient = ctx.createRadialGradient(screenX, screenY, 0, screenX, screenY, radius * 2.2);
+          outerGradient.addColorStop(0, 'rgba(0, 255, 0, 0.3)');
+          outerGradient.addColorStop(0.5, 'rgba(0, 200, 0, 0.15)');
+          outerGradient.addColorStop(1, 'rgba(0, 150, 0, 0)');
+          ctx.fillStyle = outerGradient; ctx.beginPath(); ctx.arc(screenX, screenY, radius * 2.2, 0, Math.PI * 2); ctx.fill();
         } else {
           ctx.fillStyle = bullet.color || '#ffff00';
           ctx.beginPath(); ctx.arc(screenX, screenY, radius, 0, Math.PI * 2); ctx.fill();
@@ -1311,7 +1515,7 @@
     if (state.running) {
       state.gameTime++;
       updateScroll(); ensureMapChunks(); spawnEnemies(); updatePlayer();
-      autoShoot(); updateBullets(); updateEnemies(); updateLifeStealParticles(); updateLightningEffects();
+      autoShoot(); updateBullets(); updateEnemies(); updateLifeStealParticles(); updateLightningEffects(); updateExplosionEffects();
     }
     draw(); requestAnimationFrame(gameLoop);
   }
