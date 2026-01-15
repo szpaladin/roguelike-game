@@ -16,8 +16,8 @@
   // 动态设置canvas尺寸
   function resizeCanvas() {
     const container = document.querySelector('.map-container');
-    const maxWidth = Math.min(window.innerWidth - 40, isMobile ? window.innerWidth - 20 : 800);
-    const maxHeight = isMobile ? window.innerHeight * 0.4 : 800;
+    const maxWidth = Math.min(window.innerWidth - 40, isMobile ? window.innerWidth - 20 : 600);
+    const maxHeight = isMobile ? window.innerHeight * 0.4 : 600;
     const size = Math.min(maxWidth, maxHeight);
     canvas.width = size;
     canvas.height = size;
@@ -50,22 +50,20 @@
       weapons: [
         {
           def: {
-            id: 'frostfire',
-            name: '燃霜',
+            id: 'light',
+            name: '光芒',
             damage: 1.0,
             interval: 30,
             speed: 8,
             radius: 4,
-            color: '#00ccff',
+            color: '#ffffaa',
             lifetime: 120,
             piercing: false,
-            burnDuration: 1200,
-            burnDamagePerFrame: 10 / 60,
-            burnColor: '#00ccff',
-            vulnerability: 0.25
+            blindChance: 0.5,
+            blindDuration: 180
           },
-          name: '燃霜',
-          color: '#00ccff',
+          name: '光芒',
+          color: '#ffffaa',
           cooldown: 0
         }
       ],  // 武器数组
@@ -74,6 +72,8 @@
     },
     entities: [],
     bullets: [],  // 子弹数组
+    lifeStealParticles: [],  // 吸血粒子数组
+    lightningEffects: [],  // 闪电特效数组
     scrollY: 0,  // 滚动位置（像素，向下为正）
     autoScrollSpeed: 0.8,  // 自动滚动速度（像素/帧）
     running: true,
@@ -155,6 +155,80 @@
       piercing: false,
       burnDuration: 180,
       burnDamagePerFrame: 5 / 60
+    },
+    VAMPIRE: {
+      id: 'vampire',
+      name: '吸血',
+      damage: 1.0,
+      interval: 30,
+      speed: 6,
+      radius: 4,
+      color: '#8b0000',
+      lifetime: 120,
+      piercing: false,
+      lifeStealChance: 0.06,
+      lifeStealAmount: 1
+    },
+    POISON: {
+      id: 'poison',
+      name: '剧毒',
+      damage: 0.5,
+      interval: 30,
+      speed: 8,
+      radius: 4,
+      color: '#00ff00',
+      lifetime: 120,
+      piercing: false,
+      poisonDuration: 900,
+      poisonDamagePerStack: 3 / 60
+    },
+    STEEL: {
+      id: 'steel',
+      name: '钢铁',
+      damage: 3.0,
+      interval: 90,
+      speed: 8,
+      radius: 4,
+      color: '#888888',
+      lifetime: 120,
+      piercing: false
+    },
+    DARK: {
+      id: 'dark',
+      name: '黑暗',
+      damage: 3.0,
+      interval: 30,
+      speed: 4,
+      radius: 4,
+      color: '#4b0082',
+      lifetime: 120,
+      piercing: false
+    },
+    LIGHTNING: {
+      id: 'lightning',
+      name: '闪电',
+      damage: 0.8,
+      interval: 30,
+      speed: 8,
+      radius: 4,
+      color: '#ffff66',
+      lifetime: 120,
+      piercing: false,
+      chainCount: 3,
+      chainRange: 150
+    },
+    LIGHT: {
+      id: 'light',
+      name: '光芒',
+      damage: 1.0,
+      interval: 30,
+      speed: 8,
+      radius: 4,
+      color: '#ffffaa',
+      lifetime: 120,
+      piercing: false,
+      blindChance: 0.5,
+      blindDuration: 180
     },
     BLIZZARD: {
       id: 'blizzard',
@@ -369,9 +443,11 @@
           type: ENTITY.ENEMY,
           x, y, ...enemyType,
           hp: enemyType.maxHp,
+          poisonStacks: 0, poisonDuration: 0,
           frozen: false, frozenTime: 0,
           burning: false, burnTime: 0, burnDamage: 0, burnColor: null,
-          vulnerable: false, vulnerableAmount: 0
+          vulnerable: false, vulnerableAmount: 0,
+          blinded: false, blindedTime: 0
         });
       }
     }
@@ -391,7 +467,7 @@
     if (nx >= state.player.radius && nx < MAP_WIDTH * TILE_SIZE - state.player.radius) {
       if (isPointInFloor(nx, state.scrollY + ny) || ny < canvas.height * 0.1) state.player.x = nx;
     }
-    if (ny >= 0 && ny < canvas.height * 0.6) state.player.y = ny;
+    if (ny >= 0 && ny < canvas.height * 0.8) state.player.y = ny;
     if (state.player.lastDamageTime > 0) state.player.lastDamageTime--;
     state.player.weapons.forEach(w => { if (w.cooldown > 0) w.cooldown--; });
   }
@@ -444,12 +520,20 @@
             color: w.def.color, radius: w.def.radius, lifetime: w.def.lifetime,
             damage: state.player.attack * w.def.damage,
             piercing: w.def.piercing || false,
+            poisonDuration: w.def.poisonDuration || 0,
+            poisonDamagePerStack: w.def.poisonDamagePerStack || 0,
+            chainCount: w.def.chainCount || 0,
+            chainRange: w.def.chainRange || 0,
+            blindChance: w.def.blindChance || 0,
+            blindDuration: w.def.blindDuration || 0,
             freezeChance: w.def.freezeChance || 0,
             freezeDuration: w.def.freezeDuration || 0,
             burnDuration: w.def.burnDuration || 0,
             burnDamagePerFrame: w.def.burnDamagePerFrame || 0,
             burnColor: w.def.burnColor || null,
-            vulnerability: w.def.vulnerability || 0
+            vulnerability: w.def.vulnerability || 0,
+            lifeStealChance: w.def.lifeStealChance || 0,
+            lifeStealAmount: w.def.lifeStealAmount || 0
           });
           w.cooldown = w.def.interval;
           shotsFiredThisFrame++;
@@ -476,6 +560,91 @@
             if (b.freezeChance > 0 && Math.random() < b.freezeChance) { e.frozen = true; e.frozenTime = b.freezeDuration; }
             if (b.burnDuration > 0) { e.burning = true; e.burnTime = b.burnDuration; e.burnDamage = b.burnDamagePerFrame; e.burnColor = b.burnColor; }
             if (b.vulnerability > 0) { e.vulnerable = true; e.vulnerableAmount = b.vulnerability; }
+            // 致盲效果
+            if (b.blindChance > 0 && Math.random() < b.blindChance) {
+              e.blinded = true;
+              e.blindedTime = b.blindDuration;
+            }
+            // 中毒效果（叠加层数）
+            if (b.poisonDuration > 0) {
+              if (!e.poisonStacks) e.poisonStacks = 0;
+              if (e.poisonStacks < 100) {
+                e.poisonStacks++;
+                e.poisonDuration = b.poisonDuration;
+                e.poisonDamagePerStack = b.poisonDamagePerStack;
+              } else {
+                e.poisonDuration = b.poisonDuration; // 刷新持续时间
+              }
+            }
+            // 吸血效果
+            if (b.lifeStealChance > 0 && Math.random() < b.lifeStealChance) {
+              state.player.hp = Math.min(state.player.maxHp, state.player.hp + b.lifeStealAmount);
+              log(`吸血回复了 ${b.lifeStealAmount} 点生命！`, 'heal');
+              updateUI();
+              // 生成单个吸血粒子特效（从敌人位置飞向玩家）
+              const playerWorldY = state.scrollY + state.player.y;
+              state.lifeStealParticles.push({
+                x: e.x,
+                y: e.y,
+                targetX: state.player.x,
+                targetY: playerWorldY,
+                life: 25,
+                trail: []
+              });
+            }
+            // 闪电连锁效果
+            if (b.chainCount > 0) {
+              const chainTargets = [];
+              const hitEnemies = new Set([e]); // 已击中的敌人
+              let currentSource = e;
+
+              for (let chain = 0; chain < b.chainCount; chain++) {
+                let nearestEnemy = null;
+                let minDist = Infinity;
+
+                // 查找距离当前源最近的未击中敌人
+                for (const target of state.entities) {
+                  if (target.type === ENTITY.ENEMY && target.hp > 0 && !hitEnemies.has(target)) {
+                    const dx = target.x - currentSource.x;
+                    const dy = target.y - currentSource.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist < b.chainRange && dist < minDist) {
+                      minDist = dist;
+                      nearestEnemy = target;
+                    }
+                  }
+                }
+
+                if (nearestEnemy) {
+                  // 造成伤害
+                  let dmg = Math.max(1, b.damage - nearestEnemy.defense);
+                  let vuln = (nearestEnemy.vulnerable ? nearestEnemy.vulnerableAmount : 0) + (nearestEnemy.frozen ? 0.1 : 0);
+                  nearestEnemy.hp -= dmg * (1 + vuln);
+
+                  // 记录连锁目标用于视觉特效
+                  chainTargets.push({ from: currentSource, to: nearestEnemy });
+
+                  if (nearestEnemy.hp <= 0) {
+                    log(`${nearestEnemy.name} 被闪电击败了！获得 ${nearestEnemy.exp} 经验，${nearestEnemy.gold} 金币。`, 'important');
+                    state.player.exp += nearestEnemy.exp; state.player.gold += nearestEnemy.gold;
+                    checkLevelUp(); updateUI();
+                  }
+
+                  hitEnemies.add(nearestEnemy);
+                  currentSource = nearestEnemy;
+                } else {
+                  break; // 没有更多目标，停止连锁
+                }
+              }
+
+              // 生成闪电特效
+              if (chainTargets.length > 0) {
+                state.lightningEffects.push({
+                  chains: chainTargets,
+                  life: 15
+                });
+              }
+            }
             if (e.hp <= 0) {
               log(`击败了 ${e.name}！获得 ${e.exp} 经验，${e.gold} 金币。`, 'important');
               state.player.exp += e.exp; state.player.gold += e.gold;
@@ -486,6 +655,48 @@
         }
       }
       if (hit) state.bullets.splice(i, 1);
+    }
+  }
+
+  // 更新闪电特效
+  function updateLightningEffects() {
+    for (let i = state.lightningEffects.length - 1; i >= 0; i--) {
+      const effect = state.lightningEffects[i];
+      effect.life--;
+      if (effect.life <= 0) {
+        state.lightningEffects.splice(i, 1);
+      }
+    }
+  }
+
+  // 更新吸血粒子
+  function updateLifeStealParticles() {
+    for (let i = state.lifeStealParticles.length - 1; i >= 0; i--) {
+      const p = state.lifeStealParticles[i];
+      p.life--;
+
+      if (p.life <= 0) {
+        state.lifeStealParticles.splice(i, 1);
+        continue;
+      }
+
+      // 记录轨迹（拖尾效果）
+      p.trail.push({ x: p.x, y: p.y });
+      if (p.trail.length > 6) p.trail.shift();
+
+      // 朝玩家移动
+      const dx = p.targetX - p.x;
+      const dy = p.targetY - p.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      if (dist < 5) {
+        state.lifeStealParticles.splice(i, 1);
+        continue;
+      }
+
+      const speed = 8;
+      p.x += (dx / dist) * speed;
+      p.y += (dy / dist) * speed;
     }
   }
 
@@ -513,6 +724,21 @@
             checkLevelUp(); updateUI(); state.entities.splice(i, 1); continue;
           }
         }
+        // 中毒DoT
+        if (e.poisonStacks > 0 && e.poisonDuration > 0) {
+          let poisonDot = e.poisonDamagePerStack * e.poisonStacks;
+          e.hp -= poisonDot;
+          if (--e.poisonDuration <= 0) { e.poisonStacks = 0; }
+          if (e.hp <= 0) {
+            log(`${e.name} 被毒死了！获得 ${e.exp} 经验，${e.gold} 金币。`, 'important');
+            state.player.exp += e.exp; state.player.gold += e.gold;
+            checkLevelUp(); updateUI(); state.entities.splice(i, 1); continue;
+          }
+        }
+        // 致盲DoT（时间递减）
+        if (e.blinded && e.blindedTime > 0) {
+          if (--e.blindedTime <= 0) { e.blinded = false; }
+        }
         if (!e.frozen && !state.paused) {
           const dx = state.player.x - e.x, dy = playerWorldY - e.y, d = Math.sqrt(dx * dx + dy * dy);
           if (d > 0) {
@@ -526,7 +752,8 @@
             openChestMenu(e);
           }
         }
-        else if (state.player.lastDamageTime <= 0) {
+        // 致盲敌人无法造成伤害
+        else if (!e.blinded && state.player.lastDamageTime <= 0) {
           const dmg = Math.max(1, e.attack - state.player.defense);
           state.player.hp -= dmg; state.player.lastDamageTime = state.player.invulnerableTime;
           log(`${e.name} 对你造成了 ${dmg} 点伤害！`, 'damage'); updateUI();
@@ -580,7 +807,7 @@
     if (state.player.weapons.length >= 4) {
       return [];
     }
-    const pool = [WEAPONS.SWIFT, WEAPONS.FIRE, WEAPONS.FROST].filter(w => !state.player.weapons.some(pw => pw.def.id === w.id));
+    const pool = [WEAPONS.SWIFT, WEAPONS.FIRE, WEAPONS.FROST, WEAPONS.VAMPIRE, WEAPONS.POISON, WEAPONS.STEEL, WEAPONS.DARK, WEAPONS.LIGHTNING, WEAPONS.LIGHT].filter(w => !state.player.weapons.some(pw => pw.def.id === w.id));
     return pool.sort(() => Math.random() - 0.5).slice(0, 4);
   }
 
@@ -632,6 +859,12 @@
       case 'swift': return '🍃';
       case 'fire': return '🔥';
       case 'frost': return '❄️';
+      case 'vampire': return '🩸';
+      case 'poison': return '☠️';
+      case 'steel': return '🔩';
+      case 'dark': return '🌑';
+      case 'lightning': return '⚡';
+      case 'light': return '✨';
       case 'blizzard': return '🌨️';
       case 'inferno': return '🔴';
       case 'frostfire': return '💠';
@@ -786,10 +1019,10 @@
     state.player = {
       x: 0, y: 0, radius: 12, speed: 3, hp: 100, maxHp: 100, level: 1, exp: 0, expToNext: 10,
       attack: 5, defense: 2, skillPoints: 0, gold: 0, lastChestDistance: 0, nextChestDistance: 10 + Math.random() * 40,
-      weapons: [{ def: WEAPONS.FROSTFIRE, name: WEAPONS.FROSTFIRE.name, color: WEAPONS.FROSTFIRE.color, cooldown: 0 }],
+      weapons: [{ def: WEAPONS.LIGHT, name: WEAPONS.LIGHT.name, color: WEAPONS.LIGHT.color, cooldown: 0 }],
       lastDamageTime: 0, invulnerableTime: 60
     };
-    state.bullets = []; state.entities = []; state.scrollY = 0; state.lastSpawnY = 0; state.lastChunkY = -CHUNK_SIZE;
+    state.bullets = []; state.entities = []; state.lifeStealParticles = []; state.lightningEffects = []; state.scrollY = 0; state.lastSpawnY = 0; state.lastChunkY = -CHUNK_SIZE;
     state.running = true; document.getElementById('death-overlay').style.display = 'none';
     document.getElementById('log-content').innerHTML = ''; initMap(); updateUI();
   }
@@ -815,6 +1048,68 @@
       }
     });
 
+    // 绘制闪电特效
+    state.lightningEffects.forEach(effect => {
+      effect.chains.forEach(chain => {
+        const fromX = chain.from.x;
+        const fromY = chain.from.y - state.scrollY;
+        const toX = chain.to.x;
+        const toY = chain.to.y - state.scrollY;
+
+        // 绘制闪电路径（曲折效果）
+        const segments = 5;
+        ctx.strokeStyle = '#ffff00';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(fromX, fromY);
+
+        for (let i = 1; i <= segments; i++) {
+          const t = i / segments;
+          const x = fromX + (toX - fromX) * t + (Math.random() - 0.5) * 15;
+          const y = fromY + (toY - fromY) * t + (Math.random() - 0.5) * 15;
+          ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+
+        // 外发光效果
+        ctx.strokeStyle = 'rgba(255, 255, 100, 0.3)';
+        ctx.lineWidth = 4;
+        ctx.stroke();
+      });
+    });
+
+    // 绘制吸血粒子
+    state.lifeStealParticles.forEach(p => {
+      const screenY = p.y - state.scrollY;
+
+      // 绘制拖尾（更细更透明）
+      if (p.trail.length > 1) {
+        ctx.strokeStyle = '#ff000020';
+        ctx.lineWidth = 2;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        p.trail.forEach((pt, idx) => {
+          const ty = pt.y - state.scrollY;
+          if (idx === 0) {
+            ctx.moveTo(pt.x, ty);
+          } else {
+            ctx.lineTo(pt.x, ty);
+          }
+        });
+        ctx.stroke();
+      }
+
+      // 绘制粒子本体（更小更柔和）
+      const gradient = ctx.createRadialGradient(p.x, screenY, 0, p.x, screenY, 4);
+      gradient.addColorStop(0, 'rgba(255, 100, 100, 0.7)');
+      gradient.addColorStop(0.6, 'rgba(200, 50, 50, 0.4)');
+      gradient.addColorStop(1, 'rgba(139, 0, 0, 0)');
+      ctx.fillStyle = gradient;
+      ctx.beginPath();
+      ctx.arc(p.x, screenY, 4, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
     // 绘制子弹（转换为屏幕坐标）
     state.bullets.forEach(bullet => {
       const screenY = bullet.y - state.scrollY;
@@ -824,6 +1119,7 @@
         const isBlizzard = bullet.color === '#4da6ff';
         const isInferno = bullet.color === '#cc0000';
         const isFrostfire = bullet.color === '#00ccff';
+        const isLight = bullet.color === '#ffffaa';
         const radius = bullet.radius || 4;
         const time = state.gameTime;
 
@@ -872,6 +1168,27 @@
           gradient.addColorStop(0, 'rgba(0, 200, 255, 0.4)');
           gradient.addColorStop(1, 'rgba(0, 50, 255, 0)');
           ctx.fillStyle = gradient; ctx.beginPath(); ctx.arc(screenX, screenY, radius * 1.6, 0, Math.PI * 2); ctx.fill();
+        } else if (isLight) {
+          // 光芒武器：发光特效
+          const lTime = time * 0.1;
+          // 外发光光晕
+          const gradient = ctx.createRadialGradient(screenX, screenY, 0, screenX, screenY, radius * 2.5);
+          gradient.addColorStop(0, 'rgba(255, 255, 200, 0.6)');
+          gradient.addColorStop(0.5, 'rgba(255, 255, 170, 0.3)');
+          gradient.addColorStop(1, 'rgba(255, 255, 100, 0)');
+          ctx.fillStyle = gradient;
+          ctx.beginPath(); ctx.arc(screenX, screenY, radius * 2.5, 0, Math.PI * 2); ctx.fill();
+          // 核心
+          ctx.fillStyle = '#ffffee';
+          ctx.beginPath(); ctx.arc(screenX, screenY, radius, 0, Math.PI * 2); ctx.fill();
+          // 闪烁粒子
+          for (let i = 0; i < 4; i++) {
+            const angle = (Math.PI * 2 / 4) * i + lTime;
+            const px = screenX + Math.cos(angle) * radius * 1.5;
+            const py = screenY + Math.sin(angle) * radius * 1.5;
+            ctx.fillStyle = 'rgba(255, 255, 200, 0.8)';
+            ctx.beginPath(); ctx.arc(px, py, 2, 0, Math.PI * 2); ctx.fill();
+          }
         } else {
           ctx.fillStyle = bullet.color || '#ffff00';
           ctx.beginPath(); ctx.arc(screenX, screenY, radius, 0, Math.PI * 2); ctx.fill();
@@ -938,6 +1255,34 @@
             ctx.fillStyle = bCol + '44'; // 25% 不透明度
             ctx.beginPath(); ctx.arc(sx, sy, e.radius * 1.3, 0, Math.PI * 2); ctx.fill();
           }
+
+          if (e.poisonStacks > 0) {
+            // 中毒特效：绿色半透明遮罩
+            const poisonAlpha = Math.min(0.6, 0.2 + e.poisonStacks * 0.004); // 层数越多越明显
+            ctx.fillStyle = `rgba(0, 255, 0, ${poisonAlpha})`;
+            ctx.beginPath(); ctx.arc(sx, sy, e.radius + 2, 0, Math.PI * 2); ctx.fill();
+          }
+
+          if (e.blinded) {
+            // 致盲标识：敌人上方显示禁止符号
+            const iconY = sy - e.radius - 8;
+            // 绘制红色圆圈
+            ctx.strokeStyle = '#ff0000';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.arc(sx, iconY, 7, 0, Math.PI * 2);
+            ctx.stroke();
+            // 绘制斜线
+            ctx.beginPath();
+            ctx.moveTo(sx - 5, iconY - 5);
+            ctx.lineTo(sx + 5, iconY + 5);
+            ctx.stroke();
+            // 绘制眼睛图标（更小）
+            ctx.font = '10px Arial';
+            ctx.fillStyle = '#ffffaa';
+            ctx.textAlign = 'center';
+            ctx.fillText('👁️', sx, iconY + 3);
+          }
         }
       }
     });
@@ -966,7 +1311,7 @@
     if (state.running) {
       state.gameTime++;
       updateScroll(); ensureMapChunks(); spawnEnemies(); updatePlayer();
-      autoShoot(); updateBullets(); updateEnemies();
+      autoShoot(); updateBullets(); updateEnemies(); updateLifeStealParticles(); updateLightningEffects();
     }
     draw(); requestAnimationFrame(gameLoop);
   }
