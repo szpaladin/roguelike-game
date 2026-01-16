@@ -49,21 +49,9 @@
       nextChestDistance: 10 + Math.random() * 40,
       weapons: [
         {
-          def: {
-            id: 'poison_mist',
-            name: '毒雾',
-            damage: 0.75,
-            interval: 30,
-            speed: 10,
-            radius: 12,
-            color: '#00ff00',
-            lifetime: 120,
-            piercing: true,
-            poisonDuration: 900,
-            poisonDamagePerStack: 3 / 60
-          },
-          name: '毒雾',
-          color: '#00ff00',
+          def: window.WEAPONS.CELL,
+          name: window.WEAPONS.CELL.name,
+          color: window.WEAPONS.CELL.color,
           cooldown: 0
         }
       ],  // 武器数组
@@ -353,31 +341,21 @@
           const spread = (i - (state.player.weapons.length - 1) / 2) * 0.05;
           const angle = Math.atan2(dy, dx) + spread;
 
+          const vx = Math.cos(angle) * w.def.speed;
+          const vy = Math.sin(angle) * w.def.speed;
+
+          // 🔧 自动继承武器定义的所有属性，然后覆盖需要特殊处理的属性
+          // 这样未来添加新武器机制时，不需要手动在这里添加属性继承
           state.bullets.push({
-            x: state.player.x, y: playerWorldY,
-            vx: Math.cos(angle) * w.def.speed,
-            vy: Math.sin(angle) * w.def.speed,
-            color: w.def.color, radius: w.def.radius, lifetime: w.def.lifetime,
-            damage: state.player.attack * w.def.damage,
-            piercing: w.def.piercing || false,
-            poisonDuration: w.def.poisonDuration || 0,
-            poisonDamagePerStack: w.def.poisonDamagePerStack || 0,
-            chainCount: w.def.chainCount || 0,
-            chainRange: w.def.chainRange || 0,
-            chainCooldown: w.def.chainCooldown || 0,
-            lastChainTime: 0,
-            blindChance: w.def.blindChance || 0,
-            blindDuration: w.def.blindDuration || 0,
-            explosionRadius: w.def.explosionRadius || 0,
-            explosionDamage: w.def.explosionDamage || 0,
-            freezeChance: w.def.freezeChance || 0,
-            freezeDuration: w.def.freezeDuration || 0,
-            burnDuration: w.def.burnDuration || 0,
-            burnDamagePerFrame: w.def.burnDamagePerFrame || 0,
-            burnColor: w.def.burnColor || null,
-            vulnerability: w.def.vulnerability || 0,
-            lifeStealChance: w.def.lifeStealChance || 0,
-            lifeStealAmount: w.def.lifeStealAmount || 0
+            // 1. 先展开所有武器定义属性（自动继承所有新属性）
+            ...w.def,
+
+            // 2. 覆盖需要特殊计算的属性
+            x: state.player.x,
+            y: playerWorldY,
+            vx: vx,
+            vy: vy,
+            damage: state.player.attack * w.def.damage  // 伤害需要乘以玩家攻击力
           });
           w.cooldown = w.def.interval;
           shotsFiredThisFrame++;
@@ -521,6 +499,176 @@
                 }
               }
             }
+
+            // 岩石武器的 AOE 伤害机制
+            if (b.aoeRadius > 0) {
+              // 生成碎土特效
+              state.explosionEffects.push({
+                x: e.x,
+                y: e.y,
+                radius: 0,
+                maxRadius: b.aoeRadius,
+                life: 15,
+                color: '#8B4513', // 棕色
+                type: 'earth'  // 标记为碎土特效
+              });
+
+              // 对范围内所有敌人造成 AOE 伤害
+              for (const target of state.entities) {
+                if (target.type === ENTITY.ENEMY && target.hp > 0) {
+                  const dx = target.x - e.x;
+                  const dy = target.y - e.y;
+                  const dist = Math.sqrt(dx * dx + dy * dy);
+
+                  if (dist < b.aoeRadius) {
+                    let aoeDmg = Math.max(1, state.player.attack * b.aoeDamage - target.defense);
+                    let vuln = (target.vulnerable ? target.vulnerableAmount : 0) + (target.frozen ? 0.1 : 0);
+                    target.hp -= aoeDmg * (1 + vuln);
+
+                    if (target.hp <= 0 && target !== e) {
+                      log(`${target.name} 被岩石的碎片击败了！获得 ${target.exp} 经验，${target.gold} 金币。`, 'important');
+                      state.player.exp += target.exp; state.player.gold += target.gold;
+                      checkLevelUp(); updateUI();
+                    }
+                  }
+                }
+              }
+            }
+
+            // 射线武器的射线伤害机制
+            if (b.rayRange && b.rayRange > 0) {
+              let rayDirX, rayDirY;
+
+              // 寻找范围内最近的敌人作为射线目标
+              let closestTarget = null;
+              let closestDist = Infinity;
+
+              for (const target of state.entities) {
+                if (target.type === ENTITY.ENEMY && target.hp > 0 && target !== e) {
+                  const dx = target.x - e.x;
+                  const dy = target.y - e.y;
+                  const dist = Math.sqrt(dx * dx + dy * dy);
+
+                  if (dist < b.rayRange && dist < closestDist) {
+                    closestTarget = target;
+                    closestDist = dist;
+                  }
+                }
+              }
+
+              // 确定射线方向
+              if (closestTarget) {
+                // 有目标：从击中点指向目标敌人
+                const rayDx = closestTarget.x - e.x;
+                const rayDy = closestTarget.y - e.y;
+                const rayLen = Math.sqrt(rayDx * rayDx + rayDy * rayDy);
+                rayDirX = rayDx / rayLen;
+                rayDirY = rayDy / rayLen;
+              } else {
+                // 无目标：随机选择一个方向
+                const randomAngle = Math.random() * Math.PI * 2;
+                rayDirX = Math.cos(randomAngle);
+                rayDirY = Math.sin(randomAngle);
+              }
+
+              // 生成双向射线视觉特效（正向和反向）
+              state.explosionEffects.push({
+                x: e.x - rayDirX * b.rayLength,  // 反向起点
+                y: e.y - rayDirY * b.rayLength,
+                endX: e.x + rayDirX * b.rayLength,  // 正向终点
+                endY: e.y + rayDirY * b.rayLength,
+                life: 10,
+                color: '#FFA500',
+                type: 'ray'  // 标记为射线特效
+              });
+
+              // 对射线路径上的所有敌人造成伤害（双向）
+              for (const target of state.entities) {
+                if (target.type === ENTITY.ENEMY && target.hp > 0) {
+                  // 计算点到射线的距离
+                  const px = target.x - e.x;
+                  const py = target.y - e.y;
+                  const dot = px * rayDirX + py * rayDirY;
+
+                  // 伤害射线范围内的所有敌人（正向和反向，总长度为2*rayLength）
+                  if (Math.abs(dot) < b.rayLength) {
+                    const perpX = px - dot * rayDirX;
+                    const perpY = py - dot * rayDirY;
+                    const perpDist = Math.sqrt(perpX * perpX + perpY * perpY);
+
+                    // 如果敌人在射线宽度范围内
+                    if (perpDist < b.rayWidth) {
+                      let rayDmg = Math.max(1, state.player.attack * b.damage - target.defense);
+                      let vuln = (target.vulnerable ? target.vulnerableAmount : 0) + (target.frozen ? 0.1 : 0);
+                      target.hp -= rayDmg * (1 + vuln);
+
+                      if (target.hp <= 0 && target !== e) {
+                        log(`${target.name} 被射线击穿了！获得 ${target.exp} 经验，${target.gold} 金币。`, 'important');
+                        state.player.exp += target.exp;
+                        state.player.gold += target.gold;
+                        checkLevelUp();
+                        updateUI();
+                      }
+                    }
+                  }
+                }
+              }
+            }
+
+            // 细胞武器的分裂机制
+            if (b.canSplit && b.splitCount > 0 && b.splitRange > 0) {
+              // 寻找分裂目标（与当前击中的敌人不同）
+              const splitTargets = [];
+              for (const target of state.entities) {
+                if (target.type === ENTITY.ENEMY && target.hp > 0 && target !== e) {
+                  const dx = target.x - e.x;
+                  const dy = target.y - e.y;
+                  const dist = Math.sqrt(dx * dx + dy * dy);
+
+                  if (dist < b.splitRange) {
+                    splitTargets.push({ enemy: target, distance: dist });
+                  }
+                }
+              }
+
+              // 按距离排序，选择最近的目标
+              splitTargets.sort((a, b) => a.distance - b.distance);
+              const selectedTargets = splitTargets.slice(0, Math.min(b.splitCount, splitTargets.length));
+
+              // 为每个目标生成分裂子弹
+              selectedTargets.forEach(({ enemy }) => {
+                const dx = enemy.x - e.x;
+                const dy = enemy.y - e.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                const angle = Math.atan2(dy, dx);
+
+                // 关键修复：让分裂子弹从被击中敌人外围偏移生成
+                // 偏移距离 = 被击中敌人的半径 + 子弹半径 + 额外安全距离
+                const offsetDistance = e.radius + b.radius + 5;
+                const startX = e.x + Math.cos(angle) * offsetDistance;
+                const startY = e.y + Math.sin(angle) * offsetDistance;
+
+
+                // 🔧 分裂子弹继承父弹的所有属性
+                state.bullets.push({
+                  // 1. 先继承父弹的所有属性
+                  ...b,
+
+                  // 2. 覆盖需要特殊设置的属性
+                  x: startX,
+                  y: startY,
+                  vx: Math.cos(angle) * b.speed,
+                  vy: Math.sin(angle) * b.speed,
+                  lifetime: 120,  // 重置生命周期
+                  piercing: false,
+                  canSplit: false,  // 分裂子弹不会再次分裂
+                  splitCount: 0,
+                  aoeRadius: 0,
+                  aoeDamage: 0
+                });
+              });
+            }
+
             if (e.hp <= 0) {
               log(`击败了 ${e.name}！获得 ${e.exp} 经验，${e.gold} 金币。`, 'important');
               state.player.exp += e.exp; state.player.gold += e.gold;
@@ -754,6 +902,9 @@
       case 'dark': return '🌑';
       case 'lightning': return '⚡';
       case 'light': return '✨';
+      case 'rock': return '🪨';  // 岩石武器
+      case 'ghost': return '👻';  // 幽灵武器
+      case 'cell': return '🦠';  // 细胞武器
       case 'bomb': return '💣';
       case 'storm': return '⛈️';
       case 'poison_mist': return '☁️';
@@ -911,7 +1062,7 @@
     state.player = {
       x: 0, y: 0, radius: 12, speed: 3, hp: 100, maxHp: 100, level: 1, exp: 0, expToNext: 10,
       attack: 5, defense: 2, skillPoints: 0, gold: 0, lastChestDistance: 0, nextChestDistance: 10 + Math.random() * 40,
-      weapons: [{ def: WEAPONS.POISON_MIST, name: WEAPONS.POISON_MIST.name, color: WEAPONS.POISON_MIST.color, cooldown: 0 }],
+      weapons: [{ def: WEAPONS.CELL, name: WEAPONS.CELL.name, color: WEAPONS.CELL.color, cooldown: 0 }],
       lastDamageTime: 0, invulnerableTime: 60
     };
     state.bullets = []; state.entities = []; state.lifeStealParticles = []; state.lightningEffects = []; state.explosionEffects = []; state.scrollY = 0; state.lastSpawnY = 0; state.lastChunkY = -CHUNK_SIZE;
@@ -944,23 +1095,107 @@
     state.explosionEffects.forEach(effect => {
       const screenY = effect.y - state.scrollY;
 
-      // 绘制爆炸波
-      const alpha = effect.life / 20;
-      const gradient = ctx.createRadialGradient(effect.x, screenY, 0, effect.x, screenY, effect.radius);
-      gradient.addColorStop(0, `rgba(255, 150, 0, ${alpha * 0.8})`);
-      gradient.addColorStop(0.5, `rgba(255, 69, 0, ${alpha * 0.5})`);
-      gradient.addColorStop(1, `rgba(255, 0, 0, 0)`);
-      ctx.fillStyle = gradient;
-      ctx.beginPath();
-      ctx.arc(effect.x, screenY, effect.radius, 0, Math.PI * 2);
-      ctx.fill();
+      if (effect.type === 'earth') {
+        // 碎土特效（岩石武器）
+        const alpha = effect.life / 15;
+        const gradient = ctx.createRadialGradient(effect.x, screenY, 0, effect.x, screenY, effect.radius);
+        gradient.addColorStop(0, `rgba(139, 69, 19, ${alpha * 0.9})`);   // 深棕色
+        gradient.addColorStop(0.5, `rgba(160, 82, 45, ${alpha * 0.6})`);  // 中等棕色
+        gradient.addColorStop(1, `rgba(139, 69, 19, 0)`);                 // 透明
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.arc(effect.x, screenY, effect.radius, 0, Math.PI * 2);
+        ctx.fill();
 
-      // 绘制爆炸外环
-      ctx.strokeStyle = `rgba(255, 100, 0, ${alpha})`;
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.arc(effect.x, screenY, effect.radius, 0, Math.PI * 2);
-      ctx.stroke();
+        // 绘制碎土粒子（四散）
+        const particleCount = 8;
+        for (let i = 0; i < particleCount; i++) {
+          const angle = (i / particleCount) * Math.PI * 2;
+          const dist = effect.radius * 0.8;
+          const px = effect.x + Math.cos(angle) * dist;
+          const py = screenY + Math.sin(angle) * dist;
+
+          ctx.fillStyle = `rgba(101, 67, 33, ${alpha})`;
+          ctx.beginPath();
+          ctx.arc(px, py, 3, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // 绘制外环
+        ctx.strokeStyle = `rgba(139, 69, 19, ${alpha * 0.8})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(effect.x, screenY, effect.radius, 0, Math.PI * 2);
+        ctx.stroke();
+      } else if (effect.type === 'ray') {
+        // 射线激光特效
+        const alpha = effect.life / 10;
+        const endScreenY = effect.endY - state.scrollY;
+
+        // 绘制激光核心（亮橙色实线）
+        ctx.strokeStyle = `rgba(255, 200, 0, ${alpha})`;
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(effect.x, screenY);
+        ctx.lineTo(effect.endX, endScreenY);
+        ctx.stroke();
+
+        // 绘制激光外发光（橙黄色柔和外围）
+        ctx.shadowBlur = 15;
+        ctx.shadowColor = `rgba(255, 165, 0, ${alpha * 0.8})`;
+        ctx.strokeStyle = `rgba(255, 165, 0, ${alpha * 0.6})`;
+        ctx.lineWidth = 8;
+        ctx.beginPath();
+        ctx.moveTo(effect.x, screenY);
+        ctx.lineTo(effect.endX, endScreenY);
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        // 绘制内部白光核心（模拟强光）
+        ctx.strokeStyle = `rgba(255, 255, 255, ${alpha * 0.8})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(effect.x, screenY);
+        ctx.lineTo(effect.endX, endScreenY);
+        ctx.stroke();
+
+        // 绘制起点和终点的光晕
+        const pointGradient1 = ctx.createRadialGradient(effect.x, screenY, 0, effect.x, screenY, 12);
+        pointGradient1.addColorStop(0, `rgba(255, 255, 255, ${alpha})`);
+        pointGradient1.addColorStop(0.5, `rgba(255, 165, 0, ${alpha * 0.6})`);
+        pointGradient1.addColorStop(1, 'rgba(255, 165, 0, 0)');
+        ctx.fillStyle = pointGradient1;
+        ctx.beginPath();
+        ctx.arc(effect.x, screenY, 12, 0, Math.PI * 2);
+        ctx.fill();
+
+        const pointGradient2 = ctx.createRadialGradient(effect.endX, endScreenY, 0, effect.endX, endScreenY, 12);
+        pointGradient2.addColorStop(0, `rgba(255, 255, 255, ${alpha})`);
+        pointGradient2.addColorStop(0.5, `rgba(255, 165, 0, ${alpha * 0.6})`);
+        pointGradient2.addColorStop(1, 'rgba(255, 165, 0, 0)');
+        ctx.fillStyle = pointGradient2;
+        ctx.beginPath();
+        ctx.arc(effect.endX, endScreenY, 12, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        // 普通爆炸特效
+        const alpha = effect.life / 20;
+        const gradient = ctx.createRadialGradient(effect.x, screenY, 0, effect.x, screenY, effect.radius);
+        gradient.addColorStop(0, `rgba(255, 150, 0, ${alpha * 0.8})`);
+        gradient.addColorStop(0.5, `rgba(255, 69, 0, ${alpha * 0.5})`);
+        gradient.addColorStop(1, `rgba(255, 0, 0, 0)`);
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.arc(effect.x, screenY, effect.radius, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 绘制爆炸外环
+        ctx.strokeStyle = `rgba(255, 100, 0, ${alpha})`;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(effect.x, screenY, effect.radius, 0, Math.PI * 2);
+        ctx.stroke();
+      }
     });
 
     // 绘制闪电特效
