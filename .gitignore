@@ -19,6 +19,8 @@ desktop.ini
 # Temporary files
 *.tmp
 *~
+*_temp.js
+game_temp.js
 
 # Build output (if you add build process later)
 dist/
