@@ -23,6 +23,7 @@ roguelike_game/
 ├── index.html              # 游戏入口
 ├── game.js                 # 核心游戏逻辑
 ├── weapon_fusion_config.js # 武器融合配置
+├── enemy_config.js         # 敌人系统配置
 └── style.css               # 样式文件
 ```
 

@@ -99,220 +99,11 @@
     CHEST: 'chest'
   };
 
-  // 敌人类型
-  const ENEMY_TYPES = [
-    { name: '史莱姆', hp: 30, maxHp: 30, attack: 3, defense: 0, exp: 5, gold: 2, color: '#66ff66', speed: 0.6, radius: 8 },
-    { name: '骷髅', hp: 50, maxHp: 50, attack: 5, defense: 1, exp: 10, gold: 5, color: '#cccccc', speed: 0.75, radius: 10 },
-    { name: '兽人', hp: 100, maxHp: 100, attack: 8, defense: 2, exp: 20, gold: 10, color: '#ff6666', speed: 0.9, radius: 12 },
-    { name: '恶魔', hp: 1000, maxHp: 1000, attack: 12, defense: 3, exp: 35, gold: 20, color: '#ff0000', speed: 1.0, radius: 14 }
-  ];
+  // 敌人类型（从 enemy_config.js 加载）
+  const ENEMY_TYPES = window.ENEMY_TYPES;
 
-  // 武器定义
-  const WEAPONS = {
-    BASIC: {
-      id: 'basic',
-      name: '普通弹珠',
-      damage: 1,
-      interval: 30,
-      speed: 8,
-      radius: 4,
-      color: '#ffff00',
-      lifetime: 120,
-      piercing: false
-    },
-    SWIFT: {
-      id: 'swift',
-      name: '疾风',
-      damage: 0.75,
-      interval: 20,
-      speed: 12,
-      radius: 3,
-      color: '#00ffff',
-      lifetime: 120,
-      piercing: true
-    },
-    FROST: {
-      id: 'frost',
-      name: '冰霜',
-      damage: 1.0,
-      interval: 30,
-      speed: 8,
-      radius: 4,
-      color: '#0066cc',
-      lifetime: 120,
-      piercing: false,
-      freezeChance: 0.1,
-      freezeDuration: 120
-    },
-    FIRE: {
-      id: 'fire',
-      name: '火焰',
-      damage: 1.0,
-      interval: 30,
-      speed: 8,
-      radius: 4,
-      color: '#ff6600',
-      lifetime: 120,
-      piercing: false,
-      burnDuration: 180,
-      burnDamagePerFrame: 5 / 60
-    },
-    VAMPIRE: {
-      id: 'vampire',
-      name: '吸血',
-      damage: 1.0,
-      interval: 30,
-      speed: 6,
-      radius: 4,
-      color: '#8b0000',
-      lifetime: 120,
-      piercing: false,
-      lifeStealChance: 0.06,
-      lifeStealAmount: 1
-    },
-    POISON: {
-      id: 'poison',
-      name: '剧毒',
-      damage: 0.5,
-      interval: 30,
-      speed: 8,
-      radius: 4,
-      color: '#00ff00',
-      lifetime: 120,
-      piercing: false,
-      poisonDuration: 900,
-      poisonDamagePerStack: 3 / 60
-    },
-    STEEL: {
-      id: 'steel',
-      name: '钢铁',
-      damage: 3.0,
-      interval: 90,
-      speed: 8,
-      radius: 4,
-      color: '#888888',
-      lifetime: 120,
-      piercing: false
-    },
-    DARK: {
-      id: 'dark',
-      name: '黑暗',
-      damage: 3.0,
-      interval: 30,
-      speed: 4,
-      radius: 4,
-      color: '#4b0082',
-      lifetime: 120,
-      piercing: false
-    },
-    LIGHTNING: {
-      id: 'lightning',
-      name: '闪电',
-      damage: 0.8,
-      interval: 30,
-      speed: 8,
-      radius: 4,
-      color: '#ffff66',
-      lifetime: 120,
-      piercing: false,
-      chainCount: 3,
-      chainRange: 150
-    },
-    LIGHT: {
-      id: 'light',
-      name: '光芒',
-      damage: 1.0,
-      interval: 30,
-      speed: 8,
-      radius: 4,
-      color: '#ffffaa',
-      lifetime: 120,
-      piercing: false,
-      blindChance: 0.5,
-      blindDuration: 180
-    },
-    BOMB: {
-      id: 'bomb',
-      name: '炸弹',
-      damage: 3.0,
-      interval: 90,
-      speed: 8,
-      radius: 6,
-      color: '#ff4500',
-      lifetime: 120,
-      piercing: false,
-      explosionRadius: 100,
-      explosionDamage: 3.0
-    },
-    STORM: {
-      id: 'storm',
-      name: '风暴',
-      damage: 1.0,
-      interval: 30,
-      speed: 10,
-      radius: 12,
-      color: '#4169e1',
-      lifetime: 120,
-      piercing: true,
-      chainCount: 3,
-      chainRange: 150,
-      chainCooldown: 6
-    },
-    POISON_MIST: {
-      id: 'poison_mist',
-      name: '毒雾',
-      damage: 0.75,
-      interval: 30,
-      speed: 10,
-      radius: 12,
-      color: '#00ff00',
-      lifetime: 120,
-      piercing: true,
-      poisonDuration: 900,
-      poisonDamagePerStack: 3 / 60
-    },
-    BLIZZARD: {
-      id: 'blizzard',
-      name: '暴风雪',
-      damage: 1.0,
-      interval: 30,
-      speed: 10,
-      radius: 12,
-      color: '#4da6ff',
-      lifetime: 120,
-      piercing: true,
-      freezeChance: 1.0,
-      freezeDuration: 48
-    },
-    INFERNO: {
-      id: 'inferno',
-      name: '炼狱',
-      damage: 1.0,
-      interval: 30,
-      speed: 10,
-      radius: 12,
-      color: '#cc0000',
-      lifetime: 120,
-      piercing: true,
-      burnDuration: 300,
-      burnDamagePerFrame: 5 / 60
-    },
-    FROSTFIRE: {
-      id: 'frostfire',
-      name: '燃霜',
-      damage: 1.0,
-      interval: 30,
-      speed: 8,
-      radius: 4,
-      color: '#00ccff',
-      lifetime: 120,
-      piercing: false,
-      burnDuration: 1200,
-      burnDamagePerFrame: 10 / 60,
-      burnColor: '#00ccff',
-      vulnerability: 0.25
-    }
-  };
+  // 武器定义（从 weapon_fusion_config.js 加载）
+  const WEAPONS = window.WEAPONS;
 
   // 日志系统
   function log(message, type = 'normal') {
@@ -473,13 +264,21 @@
     if (spawnY - state.lastSpawnY >= state.spawnInterval) {
       state.lastSpawnY = spawnY;
       const enemyCount = 2 + Math.floor(Math.random() * 3);
+      // 获取当前距离，用于解锁敌人类型
+      const currentDistance = Math.floor(state.scrollY / TILE_SIZE);
+
       for (let i = 0; i < enemyCount; i++) {
         const x = (2 + Math.random() * (MAP_WIDTH - 4)) * TILE_SIZE;
         const y = spawnY + Math.random() * 200;
-        const enemyType = ENEMY_TYPES[Math.min(
-          Math.floor(Math.random() * (1 + state.player.level / 3)),
-          ENEMY_TYPES.length - 1
-        )];
+
+        // 使用新的距离解锁机制生成敌人
+        const enemyType = window.getRandomEnemyType
+          ? window.getRandomEnemyType(currentDistance)
+          : ENEMY_TYPES[Math.min(
+            Math.floor(Math.random() * (1 + state.player.level / 3)),
+            ENEMY_TYPES.length - 1
+          )];
+
         state.entities.push({
           type: ENTITY.ENEMY,
           x, y, ...enemyType,
@@ -1079,7 +878,7 @@
 
   function selectFusion(recipe) {
     // 执行进化
-    const result = performFusion(state.player.weapons, recipe, WEAPONS);
+    const result = performFusion(state.player.weapons, recipe);
 
     if (result.success) {
       log(result.message, 'important');
